@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hub 3D</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-size: 14px; }
+[hidden] { display: none !important; }
+
+/* Layout: full-bleed 3D canvas, a slim floating title block and a control strip */
+:root {
+  --bg: #e9ecef; --panel: rgba(255,255,255,.86); --fg: #1d2329; --muted: #5c6670; --accent: #2f6f8f; --line: rgba(29,35,41,.12);
+  --display: "Space Grotesk", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15191d; --panel: rgba(28,33,38,.86); --fg: #e6eaee; --muted: #9aa5ae; --accent: #7fb8d4; --line: rgba(230,234,238,.14); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15191d; --panel: rgba(28,33,38,.86); --fg: #e6eaee; --muted: #9aa5ae; --accent: #7fb8d4; --line: rgba(230,234,238,.14); color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); overflow: hidden; }
+#stage { position: fixed; inset: 0; }
+canvas { display: block; touch-action: none; }
+.hud { position: fixed; left: 0; right: 0; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.top { top: calc(env(safe-area-inset-top, 0px) + 16px); }
+.bottom { bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); display: flex; justify-content: center; }
+.card { pointer-events: auto; background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 10px; }
+.title { display: inline-flex; flex-direction: column; gap: 2px; padding: 10px 14px; max-width: 100%; }
+h1 { font-family: var(--display); font-weight: 600; font-size: 1.15rem; margin: 0; letter-spacing: .01em; }
+.title p { margin: 0; color: var(--muted); font-size: .8rem; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; justify-content: center; }
+button { font: 500 .82rem var(--body); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.side { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 16px); right: max(16px, env(safe-area-inset-right, 0px));
+  width: 13.5rem; max-width: calc(100vw - 32px); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.side h2 { font: 600 .72rem var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 4px; }
+.side label { display: flex; align-items: center; gap: 9px; font-size: .86rem; padding: 5px 2px; cursor: pointer; }
+.side input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.side .all { margin-top: 6px; }
+@media (max-width: 560px) {
+  .side { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); width: auto; left: max(16px, env(safe-area-inset-left, 0px));
+    flex-direction: row; flex-wrap: wrap; column-gap: 12px; row-gap: 0; padding: 8px 12px; }
+  .side h2, .side .all { display: none; }
+  .side label { font-size: .8rem; }
+}
+#status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: .9rem; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="status">Cargando modelo…</div>
+<div class="hud top"><div class="card title"><h1>Hub</h1><p>Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar</p></div></div>
+<div class="card side" id="layers">
+  <h2>Mostrar</h2>
+  <label><input type="checkbox" id="l-izq" data-group="izq" checked> Pared izquierda</label>
+  <label><input type="checkbox" id="l-der" data-group="der" checked> Pared derecha</label>
+  <label><input type="checkbox" id="l-fondo" data-group="fondo" checked> Pared de fondo</label>
+  <label><input type="checkbox" id="l-fachada" data-group="fachada" checked> Fachada de vidrio</label>
+  <label><input type="checkbox" id="l-techo" data-group="techo" checked> Techo</label>
+  <label><input type="checkbox" id="l-colg" data-group="colg" checked> Luces y nubes</label>
+  <button type="button" class="all" id="b-all">Mostrar todo</button>
+</div>
+<div class="hud bottom"><div class="card bar">
+  <button id="b-persp" type="button">Perspectiva</button>
+  <button id="b-top" type="button">Planta</button>
+  <button id="b-front" type="button">Frontal</button>
+  <button id="b-spin" type="button" aria-pressed="false">Girar</button>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>
+const stage = document.getElementById('stage'), status = document.getElementById('status');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f94, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 1000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+let center = new THREE.Vector3(), radius = 10;
+function view(dir) {
+  const d = dir.clone().normalize().multiplyScalar(radius * 2.1);
+  camera.position.copy(center).add(d);
+  controls.target.copy(center); controls.update();
+}
+const views = { persp: new THREE.Vector3(1, 0.9, 1.2), top: new THREE.Vector3(0, 1, 0.0001), front: new THREE.Vector3(0, 0.25, 1) };
+
+// Blender procedural materials (Wave/Noise + ColorRamp) rebuilt in GLSL with the same parameters,
+// evaluated in Blender object coordinates (glTF Y-up -> Blender Z-up).
+const PROC = {
+  Mueble_Cerezo: `vec3 p = vec3(o.x, o.y, o.z * 0.15) * 6.0;
+    float f = waveBands(p.x * 20.0, p, 6.0, 1.0, 3);
+    col = mix(vec3(0.62, 0.25, 0.09), vec3(0.8, 0.4, 0.18), f);`,
+  Techo_Bagueta: `vec3 p = vec3(o.x * 0.15, o.y, o.z) * 12.0;
+    float f = waveBands(p.y * 20.0, p, 10.0, 1.5, 4);
+    col = mix(vec3(0.672, 0.515, 0.352), vec3(0.552, 0.392, 0.238), clamp((f - 0.3) / 0.7, 0.0, 1.0));`,
+  Mural_Corcho: `float f = fbm(o * 60.0, 4);
+    col = mix(vec3(0.3, 0.18, 0.09), vec3(0.62, 0.44, 0.27), clamp((f - 0.35) / 0.3, 0.0, 1.0));`,
+};
+const NOISE_GLSL = `
+varying vec3 vObjPos;
+float h3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vnoise(vec3 x) {
+  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p, int oct) {
+  float s = 0.0, a = 1.0, t = 0.0;
+  for (int i = 0; i < 6; i++) { if (i > oct) break; s += a * vnoise(p); t += a; a *= 0.5; p *= 2.0; }
+  return s / t;
+}
+float waveBands(float n, vec3 p, float dist, float ds, int det) {
+  n += dist * (fbm(p * ds, det) * 2.0 - 1.0);
+  return 0.5 + 0.5 * sin(n - 1.5707963);
+}`;
+function proceduralize(m) {
+  if (m.userData.proc) return; m.userData.proc = true;
+  const body = PROC[m.name];
+  m.map = null; m.color.set(0xffffff);
+  m.customProgramCacheKey = () => 'proc-' + m.name;
+  m.onBeforeCompile = s => {
+    s.vertexShader = s.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjPos = vec3(position.x, -position.z, position.y);');
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + NOISE_GLSL)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ vec3 o = vObjPos; vec3 col; ' + body + ' diffuseColor.rgb = col; }');
+  };
+  m.needsUpdate = true;
+}
+
+// Object names from hub.blend (Muros split per wall at export)
+const membership = {
+  izq: ['Muro_Izquierdo', 'Mural_Izquierdo', 'Aire_Acondicionado'],
+  der: ['Muro_Derecho', 'Mural_Derecho', 'Diario_Mural'],
+  fondo: ['Muro_Fondo', 'Mural_Fondo'],
+  fachada: ['Fachada_Vidrio', 'Fachada_Perfiles', 'Vinilo_Puerta', 'Vinilo_Panos_Fijos'],
+  techo: ['Losa', 'Baguetas'],
+  colg: ['Isla_LED', 'Nubes_Acusticas', 'Nubes_Cables', /^Anillo_\d+$/],
+};
+const groups = Object.fromEntries(Object.keys(membership).map(k => [k, []]));
+function groupOf(name) {
+  for (const [g, list] of Object.entries(membership))
+    if (list.some(m => m instanceof RegExp ? m.test(name) : m === name)) return g;
+  return null;
+}
+function apply(input) { groups[input.dataset.group].forEach(o => { o.visible = input.checked; }); }
+document.querySelectorAll('#layers input').forEach(i => i.addEventListener('change', () => apply(i)));
+document.getElementById('b-all').onclick = () => document.querySelectorAll('#layers input').forEach(i => { i.checked = true; apply(i); });
+
+new THREE.GLTFLoader().loadAsync('hub.glb').then(gltf => {
+  const model = gltf.scene;
+  model.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true;
+    const m = o.material;
+    if (PROC[m.name]) proceduralize(m);
+    if (m.name === 'Vinilo_Mampara') {
+      // PNG with alpha exported as opaque: honor its transparency
+      m.transparent = true; m.alphaTest = 0.02; m.depthWrite = false; m.needsUpdate = true;
+      o.castShadow = false; o.renderOrder = 2;
+    } else if (m.name === 'Hub_Vidrio') {
+      // Plain see-through glass instead of transmission, which renders dark here
+      o.material = new THREE.MeshStandardMaterial({ color: 0xd9f2ee, transparent: true, opacity: 0.18,
+        roughness: 0.05, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
+      o.castShadow = false; o.renderOrder = 1;
+    }
+  });
+  scene.add(model);
+  model.traverse(o => { const g = groupOf(o.name); if (g && !(o.parent && groupOf(o.parent.name) === g)) groups[g].push(o); });
+  document.querySelectorAll('#layers input').forEach(apply);
+  const box = new THREE.Box3().setFromObject(model);
+  box.getCenter(center); radius = box.getSize(new THREE.Vector3()).length() / 2;
+  camera.near = radius / 200; camera.far = radius * 50; camera.updateProjectionMatrix();
+  sun.position.copy(center).add(new THREE.Vector3(radius, radius * 2, radius * 0.8));
+  sun.target.position.copy(center); scene.add(sun.target);
+  const sc = sun.shadow.camera; sc.left = sc.bottom = -radius; sc.right = sc.top = radius; sc.far = radius * 6; sc.updateProjectionMatrix();
+  controls.maxDistance = radius * 6;
+  view(views.persp);
+  status.hidden = true;
+}).catch(err => { status.textContent = 'No se pudo cargar el modelo. Recarga la página.'; console.error(err); });
+
+document.getElementById('b-persp').onclick = () => view(views.persp);
+document.getElementById('b-top').onclick = () => view(views.top);
+document.getElementById('b-front').onclick = () => view(views.front);
+const spin = document.getElementById('b-spin');
+spin.onclick = () => { controls.autoRotate = !controls.autoRotate; spin.setAttribute('aria-pressed', controls.autoRotate); };
+
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
