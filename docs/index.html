@@ -32,6 +32,8 @@ canvas { display: block; touch-action: none; }
 .title { display: inline-flex; flex-direction: column; gap: 2px; padding: 10px 14px; max-width: 100%; }
 h1 { font-family: var(--display); font-weight: 600; font-size: 1.15rem; margin: 0; letter-spacing: .01em; }
 .title p { margin: 0; color: var(--muted); font-size: .8rem; }
+.ver { display: flex; gap: 4px; margin: 4px 0 2px; }
+.ver button { padding: 4px 10px; font-size: .78rem; }
 .bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; justify-content: center; }
 button { font: 500 .82rem var(--body); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer; }
 button:hover { border-color: var(--accent); color: var(--accent); }
@@ -54,8 +56,18 @@ button[aria-pressed="true"] { background: var(--accent); color: var(--bg); borde
 .help dt { font-weight: 500; white-space: nowrap; }
 .help dd { margin: 0; color: var(--muted); }
 kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
-#joy { position: fixed; left: max(24px, calc(env(safe-area-inset-left, 0px) + 24px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
-  width: 112px; height: 112px; border-radius: 50%; touch-action: none; }
+#joypad { position: fixed; right: max(24px, calc(env(safe-area-inset-right, 0px) + 24px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  display: flex; align-items: center; gap: 10px; }
+.zoomcol { display: flex; flex-direction: column; gap: 8px; }
+.zoomcol button { width: 44px; height: 44px; padding: 0; border-radius: 50%; font: 500 1.35rem/1 var(--body); }
+#joy { position: relative; flex: none;
+  width: 112px; height: 112px; border-radius: 50%; touch-action: none; cursor: grab; }
+.arr { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; pointer-events: none;
+  fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.arr.up { transform: translateY(-42px); }
+.arr.right { transform: translateX(42px) rotate(90deg); }
+.arr.down { transform: translateY(42px) rotate(180deg); }
+.arr.left { transform: translateX(-42px) rotate(-90deg); }
 #knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: var(--accent); opacity: .85; pointer-events: none; }
 .side h2 { font: 600 .72rem var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 4px; }
 .side label { display: flex; align-items: center; gap: 9px; font-size: .86rem; padding: 5px 2px; cursor: pointer; }
@@ -79,7 +91,7 @@ kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom
 <body>
 <div id="stage"></div>
 <div id="status">Cargando modelo…</div>
-<div class="hud top"><div class="card title"><h1>Hub</h1><p id="hint">Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar</p></div></div>
+<div class="hud top"><div class="card title"><h1>Hub</h1><div id="versions" class="ver" role="group" aria-label="Versión del modelo"><button type="button" data-v="1" aria-pressed="false">Versión 1</button><button type="button" data-v="2" aria-pressed="false">Versión 2</button></div><p id="hint">Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar</p></div></div>
 <div class="rightcol">
 <div class="card side" id="layers">
   <h2>Mostrar</h2>
@@ -96,22 +108,27 @@ kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom
   <div id="minimap" role="button" tabindex="0" aria-label="Plano del Hub: haz clic en un punto para recorrerlo desde ahí"><canvas id="mapmarks"></canvas></div>
 </div>
 </div>
-<div id="joy" class="card" hidden><div id="knob"></div></div>
+<div id="joypad"><div class="zoomcol"><button type="button" class="card" id="j-in" aria-label="Acercar">+</button><button type="button" class="card" id="j-out" aria-label="Alejar">−</button></div><div id="joy" class="card" aria-label="Joystick"><svg class="arr up" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8 L6 4 L10 8"/></svg><svg class="arr right" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8 L6 4 L10 8"/></svg><svg class="arr down" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8 L6 4 L10 8"/></svg><svg class="arr left" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8 L6 4 L10 8"/></svg><div id="knob"></div></div></div>
 <div class="card help" id="help" hidden>
   <h2>Vista general</h2>
   <dl>
     <dt>Arrastrar</dt><dd>Girar alrededor del modelo</dd>
+    <dt>Doble clic</dt><dd>Centrar el giro en ese punto</dd>
     <dt>Rueda · <kbd>+</kbd> <kbd>−</kbd></dt><dd>Acercar y alejar</dd>
     <dt>Clic derecho · <kbd>← ↑ → ↓</kbd></dt><dd>Desplazar</dd>
     <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Perspectiva, planta, frontal</dd>
   </dl>
   <h2>Recorrer</h2>
   <dl>
-    <dt><kbd>C</kbd> o clic en el plano</dt><dd>Entrar caminando</dd>
-    <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <kbd>↑ ↓</kbd></dt><dd>Avanzar, retroceder y moverse de lado</dd>
-    <dt><kbd>← →</kbd> · arrastrar</dt><dd>Girar la mirada</dd>
-    <dt><kbd>Shift</kbd></dt><dd>Caminar más rápido</dd>
-    <dt>Joystick</dt><dd>Moverse en pantallas táctiles</dd>
+    <dt>Recorrer o clic en el plano</dt><dd>Entrar caminando</dd>
+    <dt>Clic en el piso</dt><dd>Caminar hasta ese punto</dd>
+    <dt>Clic en pared u objeto</dt><dd>Mirar hacia ahí</dd>
+    <dt>Clic en la puerta</dt><dd>Abrir o cerrar la corredera (se abre sola al acercarte)</dd>
+    <dt>Arrastrar</dt><dd>Mirar alrededor</dd>
+    <dt>Rueda</dt><dd>Avanzar y retroceder</dd>
+    <dt>Joystick</dt><dd>Moverse arrastrando el círculo (en la vista general, girar el modelo)</dd>
+    <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <kbd>↑ ↓</kbd></dt><dd>Teclado: avanzar, retroceder y de lado</dd>
+    <dt><kbd>← →</kbd> · <kbd>Shift</kbd></dt><dd>Teclado: girar · ir más rápido</dd>
     <dt><kbd>Esc</kbd></dt><dd>Volver a la vista general</dd>
   </dl>
 </div>
@@ -152,7 +169,7 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 1000);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-let center = new THREE.Vector3(), radius = 10;
+let center = new THREE.Vector3(), radius = 10, modelRoot = null;
 function view(dir) {
   const d = dir.clone().normalize().multiplyScalar(radius * 2.1);
   camera.position.copy(center).add(d);
@@ -210,7 +227,7 @@ const membership = {
   izq: ['Muro_Izquierdo', 'Mural_Izquierdo', 'Aire_Acondicionado'],
   der: ['Muro_Derecho', 'Mural_Derecho', 'Diario_Mural'],
   fondo: ['Muro_Fondo', 'Mural_Fondo'],
-  fachada: ['Fachada_Vidrio', 'Fachada_Perfiles', 'Vinilo_Puerta', 'Vinilo_Panos_Fijos'],
+  fachada: ['Fachada_Vidrio', 'Fachada_Perfiles', 'Vinilo_Puerta', 'Vinilo_Panos_Fijos', 'Puerta_Hoja_Izq', 'Puerta_Hoja_Der'],
   techo: ['Losa', 'Baguetas'],
   colg: ['Isla_LED', 'Nubes_Acusticas', 'Nubes_Cables', /^Anillo_\d+$/],
 };
@@ -224,8 +241,12 @@ function apply(input) { groups[input.dataset.group].forEach(o => { o.visible = i
 document.querySelectorAll('#layers input').forEach(i => i.addEventListener('change', () => apply(i)));
 document.getElementById('b-all').onclick = () => document.querySelectorAll('#layers input').forEach(i => { i.checked = true; apply(i); });
 
-new THREE.GLTFLoader().loadAsync('hub.glb').then(gltf => {
-  const model = gltf.scene;
+// ---------- Versiones del modelo ----------
+const VERSIONS = { 1: 'hub.glb', 2: 'hub_v2.glb' };
+const fetchModel = v => new THREE.GLTFLoader().loadAsync(VERSIONS[v]);
+const loaded = {}, loading = {};
+let current = null, wanted = null, firstView = true;
+function prepare(model) {
   model.traverse(o => {
     if (!o.isMesh) return;
     o.castShadow = o.receiveShadow = true;
@@ -242,20 +263,55 @@ new THREE.GLTFLoader().loadAsync('hub.glb').then(gltf => {
       o.castShadow = false; o.renderOrder = 1;
     }
   });
-  scene.add(model);
+  return model;
+}
+function activate(v, model) {
+  if (modelRoot) scene.remove(modelRoot);
+  scene.add(model); modelRoot = model; current = v;
+  for (const k in groups) groups[k].length = 0;
+  DOOR.leaves.length = 0; DOOR.t = 0; DOOR.manual = null;
+  ['Puerta_Hoja_Izq', 'Puerta_Hoja_Der'].forEach((n, i) => {
+    const o = model.getObjectByName(n); if (!o) return;
+    o.userData.baseX ??= o.position.x; o.position.x = o.userData.baseX;
+    DOOR.leaves.push({ o, x: o.userData.baseX, dir: i ? 1 : -1 });
+  });
   model.traverse(o => { const g = groupOf(o.name); if (g && !(o.parent && groupOf(o.parent.name) === g)) groups[g].push(o); });
   document.querySelectorAll('#layers input').forEach(apply);
   const box = new THREE.Box3().setFromObject(model);
-  box.getCenter(center); radius = box.getSize(new THREE.Vector3()).length() / 2;
-  camera.near = radius / 200; camera.far = radius * 50; camera.updateProjectionMatrix();
-  sun.position.copy(center).add(new THREE.Vector3(radius, radius * 2, radius * 0.8));
-  sun.target.position.copy(center); scene.add(sun.target);
-  const sc = sun.shadow.camera; sc.left = sc.bottom = -radius; sc.right = sc.top = radius; sc.far = radius * 6; sc.updateProjectionMatrix();
-  controls.maxDistance = radius * 6;
-  view(views.persp);
+  if (firstView) {
+    box.getCenter(center); radius = box.getSize(new THREE.Vector3()).length() / 2;
+    camera.near = radius / 200; camera.far = radius * 50; camera.updateProjectionMatrix();
+    sun.position.copy(center).add(new THREE.Vector3(radius, radius * 2, radius * 0.8));
+    sun.target.position.copy(center); scene.add(sun.target);
+    const sc = sun.shadow.camera; sc.left = sc.bottom = -radius; sc.right = sc.top = radius; sc.far = radius * 6; sc.updateProjectionMatrix();
+    controls.maxDistance = radius * 6;
+    view(views.persp); firstView = false;
+  }
   setupMap(box);
-  status.hidden = true;
-}).catch(err => { status.textContent = 'No se pudo cargar el modelo. Recarga la página.'; console.error(err); });
+  document.querySelectorAll('#versions button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v == v));
+  try { localStorage.setItem('hub-version', v); } catch (e) {}
+}
+function load(v) {
+  return loading[v] ??= fetchModel(v).then(g => (loaded[v] = prepare(g.scene)));
+}
+function showVersion(v) {
+  wanted = v;
+  if (loaded[v]) { activate(v, loaded[v]); return; }
+  status.hidden = false; status.textContent = `Cargando versión ${v}…`;
+  load(v).then(m => {
+    if (wanted !== v) return;
+    activate(v, m); status.hidden = true;
+    const other = v == 1 ? 2 : 1; setTimeout(() => load(other).catch(() => { delete loading[other]; }), 500); // precarga la otra
+  }).catch(err => {
+    delete loading[v];
+    status.textContent = 'No se pudo cargar el modelo. Recarga la página.'; console.error(err);
+  });
+}
+document.querySelectorAll('#versions button').forEach(b => b.onclick = () => showVersion(+b.dataset.v));
+let startVersion = 1;
+try { startVersion = +localStorage.getItem('hub-version') || 1; } catch (e) {}
+if (!VERSIONS[startVersion]) startVersion = 1;
+
 
 const $ = id => document.getElementById(id);
 const orbitView = v => { if (walking) exitWalk(); view(views[v]); };
@@ -292,15 +348,15 @@ function enterWalk(x, z, lookYaw) {
   yaw = lookYaw ?? 0; pitch = -0.08; applyLook();
   document.body.classList.add('walking');
   $('b-walk').setAttribute('aria-pressed', true);
-  $('joy').hidden = !coarse;
-  $('hint').textContent = coarse ? 'Joystick para moverte · arrastra para mirar' : 'W A S D para moverte · arrastra para mirar · Esc para salir';
+  $('hint').textContent = coarse ? 'Toca el piso para caminar · arrastra para mirar · joystick para moverte'
+    : 'Clic en el piso para caminar · arrastra para mirar · rueda para avanzar';
 }
 function exitWalk() {
-  walking = false; controls.enabled = true; keys.clear();
+  walking = false; controls.enabled = true; keys.clear(); glide = look = null; ring.visible = false;
+  renderer.domElement.style.cursor = '';
   camera.fov = 45; camera.near = radius / 200; camera.updateProjectionMatrix();
   document.body.classList.remove('walking');
   $('b-walk').setAttribute('aria-pressed', false);
-  $('joy').hidden = true;
   $('hint').textContent = 'Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar';
   view(views.persp);
 }
@@ -312,23 +368,104 @@ $('b-walk').onclick = () => walking ? exitWalk() : startWalk();
 let drag = null;
 renderer.domElement.addEventListener('pointerdown', e => {
   if (!walking || e.button !== 0) return;
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() };
   renderer.domElement.setPointerCapture(e.pointerId);
 });
 renderer.domElement.addEventListener('pointermove', e => {
-  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag || e.pointerId !== drag.id) { hoverFloor(e); return; }
+  if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return;
+  glide = look = null; ring.visible = false;
   const k = coarse ? 0.006 : 0.004;
   yaw -= (e.clientX - drag.x) * k; pitch -= (e.clientY - drag.y) * k;
   pitch = Math.max(-1.35, Math.min(1.35, pitch));
   drag.x = e.clientX; drag.y = e.clientY; applyLook();
 });
 const endDrag = e => { if (drag && e.pointerId === drag.id) drag = null; };
-renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (drag && e.pointerId === drag.id && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6 && performance.now() - drag.t0 < 600) clickWalk(e);
+  endDrag(e);
+});
+renderer.domElement.addEventListener('pointerleave', () => { if (!drag) ring.visible = false; });
 renderer.domElement.addEventListener('pointercancel', endDrag);
 renderer.domElement.addEventListener('wheel', e => {
   if (!walking) return;
-  e.preventDefault(); moveBy(-Math.sign(e.deltaY) * 0.35, 0);
+  e.preventDefault(); glide = null; moveBy(-Math.sign(e.deltaY) * 0.35, 0);
 }, { passive: false });
+
+// ---------- Navegación con el mouse ----------
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let glide = null, look = null, focusTween = null;
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
+ring.renderOrder = 5; ring.visible = false; scene.add(ring);
+function isShown(o) { for (; o; o = o.parent) if (!o.visible) return false; return true; }
+function pick(e) {
+  if (!modelRoot) return null;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  for (const h of raycaster.intersectObject(modelRoot, true)) {
+    if (!isShown(h.object)) continue;
+    const m = h.object.material;
+    if (m && m.transparent && m.opacity < 0.5) continue; // atravesar el vidrio
+    const n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new THREE.Vector3();
+    let door = false; for (let o = h.object; o; o = o.parent) if (/^Puerta_Hoja/.test(o.name)) door = true;
+    return { point: h.point, floor: n.y > 0.7 && h.point.y < 0.3, door };
+  }
+  return null;
+}
+function hoverFloor(e) {
+  if (!walking || coarse) return;
+  const h = pick(e);
+  if (h && h.floor) { ring.position.set(h.point.x, h.point.y + 0.012, h.point.z); ring.material.color.set(css('--marker')); ring.visible = true; }
+  else ring.visible = false;
+  renderer.domElement.style.cursor = h ? 'pointer' : '';
+}
+function clickWalk(e) {
+  const h = pick(e);
+  if (!h) return;
+  if (h.door) { toggleDoor(); return; }
+  if (h.floor) {
+    const to = new THREE.Vector3(h.point.x, EYE, h.point.z); clampToRoom(to);
+    const dist = to.distanceTo(camera.position);
+    if (dist < 0.05) return;
+    glide = { from: camera.position.clone(), to, t: 0, dur: Math.max(0.35, dist / 2.2) };
+    // girar suavemente hacia donde se camina
+    turnTo(Math.atan2(-(to.x - camera.position.x), -(to.z - camera.position.z)), Math.max(-0.1, Math.min(0.1, pitch)), glide.dur * 0.6);
+  } else {
+    const d = h.point.clone().sub(camera.position);
+    turnTo(Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z)), 0.6);
+  }
+}
+function turnTo(y1, p1, dur) {
+  let dy = ((y1 - yaw) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+  look = { y0: yaw, p0: pitch, dy, dp: Math.max(-1.35, Math.min(1.35, p1)) - pitch, t: 0, dur };
+}
+const ease = t => t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+// Vista general: doble clic centra el giro en ese punto
+renderer.domElement.addEventListener('dblclick', e => {
+  if (walking) return;
+  const h = pick(e); if (!h) return;
+  focusTween = { from: controls.target.clone(), to: h.point.clone(), cam: camera.position.clone(), t: 0, dur: 0.6 };
+});
+function stepTweens(dt) {
+  if (glide) {
+    glide.t = Math.min(1, glide.t + dt / glide.dur);
+    camera.position.lerpVectors(glide.from, glide.to, ease(glide.t));
+    if (glide.t >= 1) glide = null;
+  }
+  if (look) {
+    look.t = Math.min(1, look.t + dt / look.dur);
+    const k = ease(look.t); yaw = look.y0 + look.dy * k; pitch = look.p0 + look.dp * k; applyLook();
+    if (look.t >= 1) look = null;
+  }
+  if (focusTween) {
+    focusTween.t = Math.min(1, focusTween.t + dt / focusTween.dur);
+    const k = ease(focusTween.t), d = focusTween.to.clone().sub(focusTween.from).multiplyScalar(k);
+    controls.target.copy(focusTween.from).add(d); camera.position.copy(focusTween.cam).add(d);
+    if (focusTween.t >= 1) focusTween = null;
+  }
+}
 
 function moveBy(fwd, side) {
   const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), r = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
@@ -343,12 +480,44 @@ function joyMove(e) {
   const len = Math.hypot(dx, dy), max = R - 10;
   if (len > max) { dx *= max / len; dy *= max / len; }
   knob.style.transform = `translate(${dx}px, ${dy}px)`;
-  joyVec.x = dx / max; joyVec.y = -dy / max;
+  joyVec.x = dx / max; joyVec.y = -dy / max; glide = null;
 }
 joy.addEventListener('pointerdown', e => { joyId = e.pointerId; joy.setPointerCapture(joyId); joyMove(e); });
 joy.addEventListener('pointermove', e => { if (e.pointerId === joyId) joyMove(e); });
 const joyEnd = e => { if (e.pointerId !== joyId) return; joyId = null; joyVec.x = joyVec.y = 0; knob.style.transform = ''; };
 joy.addEventListener('pointerup', joyEnd); joy.addEventListener('pointercancel', joyEnd);
+
+// ---------- Puerta corredera ----------
+// Se abre sola al acercarse caminando; un clic sobre una hoja la abre o la cierra.
+const DOOR = { x: 3.15, z: 0.075, travel: 0.70, t: 0, manual: null, leaves: [] };
+const doorNear = () => walking && Math.hypot(camera.position.x - DOOR.x, camera.position.z - DOOR.z) < 2.2;
+function toggleDoor() { DOOR.manual = !((DOOR.manual ?? doorNear()) ); }
+let wasNear = false;
+function stepDoor(dt) {
+  if (!DOOR.leaves.length) return;
+  const near = doorNear();
+  if (near !== wasNear) { DOOR.manual = null; wasNear = near; } // al acercarse o alejarse vuelve a lo automático
+  const goal = (DOOR.manual ?? near) ? 1 : 0;
+  DOOR.t += Math.sign(goal - DOOR.t) * Math.min(Math.abs(goal - DOOR.t), dt / 0.9);
+  const k = ease(DOOR.t);
+  DOOR.leaves.forEach(l => { l.o.position.x = l.x + l.dir * DOOR.travel * k; });
+}
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('click', e => {
+  if (walking || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+  const h = pick(e); if (h && h.door) toggleDoor();
+});
+
+// Vista general: el joystick gira (izq/der) e inclina (arriba/abajo) alrededor del modelo
+const sph = new THREE.Spherical();
+function orbitBy(dTheta, dPhi) {
+  const off = camera.position.clone().sub(controls.target);
+  sph.setFromVector3(off); sph.theta += dTheta;
+  sph.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.02, sph.phi - dPhi));
+  camera.position.copy(controls.target).add(off.setFromSpherical(sph));
+  camera.lookAt(controls.target);
+}
 
 // Teclado
 addEventListener('keydown', e => {
@@ -381,6 +550,8 @@ function zoom(f) {
 }
 $('b-in').onclick = () => zoom(0.8);
 $('b-out').onclick = () => zoom(1.25);
+$('j-in').onclick = () => zoom(0.8);
+$('j-out').onclick = () => zoom(1.25);
 function toggleHelp() { const h = $('help'); h.hidden = !h.hidden; $('b-help').setAttribute('aria-pressed', !h.hidden); }
 $('b-help').onclick = toggleHelp;
 
@@ -454,12 +625,17 @@ renderer.setAnimationLoop(() => {
     const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + joyVec.y;
     const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) + joyVec.x;
     const turn = (keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0);
+    if (turn || fwd || side) glide = look = null;
     if (turn) { yaw += turn * 1.8 * dt; applyLook(); }
     if (fwd || side) moveBy(fwd * WALK_SPEED * run * dt, side * WALK_SPEED * run * dt);
-  } else controls.update();
+  }
+  else if (joyVec.x || joyVec.y) orbitBy(-joyVec.x * 1.6 * dt, joyVec.y * 1.1 * dt);
+  stepTweens(dt); stepDoor(dt);
+  if (!walking) controls.update();
   renderer.render(scene, camera);
   renderMap();
 });
+showVersion(startVersion);
 </script>
 </body>
 </html>

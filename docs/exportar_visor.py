@@ -6,7 +6,9 @@ import os
 import bpy
 import bmesh
 
-out = os.path.join(os.path.dirname(bpy.data.filepath), "docs", "hub.glb")
+# hub.blend -> docs/hub.glb · hub_v2.blend -> docs/hub_v2.glb
+out = os.path.join(os.path.dirname(bpy.data.filepath), "docs",
+                   os.path.splitext(os.path.basename(bpy.data.filepath))[0] + ".glb")
 
 # Límites interiores del recinto (m): x 0..5.66, y 0..7.81
 def pared(c):
