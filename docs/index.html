@@ -13,12 +13,13 @@ body { margin: 0; font-size: 14px; }
 /* Layout: full-bleed 3D canvas, a slim floating title block and a control strip */
 :root {
   --bg: #e9ecef; --panel: rgba(255,255,255,.86); --fg: #1d2329; --muted: #5c6670; --accent: #2f6f8f; --line: rgba(29,35,41,.12);
+  --map: #f6f7f8; --marker: #d9481c;
   --display: "Space Grotesk", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #15191d; --panel: rgba(28,33,38,.86); --fg: #e6eaee; --muted: #9aa5ae; --accent: #7fb8d4; --line: rgba(230,234,238,.14); color-scheme: dark } }
+  --bg: #15191d; --panel: rgba(28,33,38,.86); --fg: #e6eaee; --muted: #9aa5ae; --accent: #7fb8d4; --line: rgba(230,234,238,.14); --map: #20262b; --marker: #ff7a45; color-scheme: dark } }
 :root[data-theme="dark"] {
-  --bg: #15191d; --panel: rgba(28,33,38,.86); --fg: #e6eaee; --muted: #9aa5ae; --accent: #7fb8d4; --line: rgba(230,234,238,.14); color-scheme: dark }
+  --bg: #15191d; --panel: rgba(28,33,38,.86); --fg: #e6eaee; --muted: #9aa5ae; --accent: #7fb8d4; --line: rgba(230,234,238,.14); --map: #20262b; --marker: #ff7a45; color-scheme: dark }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--fg); font-family: var(--body); overflow: hidden; }
 #stage { position: fixed; inset: 0; }
@@ -36,16 +37,40 @@ button { font: 500 .82rem var(--body); color: var(--fg); background: transparent
 button:hover { border-color: var(--accent); color: var(--accent); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.side { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 16px); right: max(16px, env(safe-area-inset-right, 0px));
-  width: 13.5rem; max-width: calc(100vw - 32px); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.rightcol { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 16px); right: max(16px, env(safe-area-inset-right, 0px));
+  width: 13.5rem; display: flex; flex-direction: column; gap: 10px; }
+.side { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.mapwrap { display: flex; flex-direction: column; gap: 6px; background: none; backdrop-filter: none; border: 0; }
+.mapwrap h2 { margin: 0; align-self: flex-start; font: 600 .72rem var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+#minimap { position: relative; width: 100%; aspect-ratio: 5.96 / 8.11; border-radius: 6px; border: 1px solid var(--line); cursor: crosshair; max-width: 100%; }
+#minimap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
+.help { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+  width: min(26rem, calc(100vw - 32px)); padding: 12px 16px; }
+.help h2 { font: 600 .72rem var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 6px 0 4px; }
+.help h2:first-child { margin-top: 0; }
+.help dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: .84rem; }
+.help dt { font-weight: 500; white-space: nowrap; }
+.help dd { margin: 0; color: var(--muted); }
+kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+#joy { position: fixed; left: max(24px, calc(env(safe-area-inset-left, 0px) + 24px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  width: 112px; height: 112px; border-radius: 50%; touch-action: none; }
+#knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: var(--accent); opacity: .85; pointer-events: none; }
 .side h2 { font: 600 .72rem var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 4px; }
 .side label { display: flex; align-items: center; gap: 9px; font-size: .86rem; padding: 5px 2px; cursor: pointer; }
 .side input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .side .all { margin-top: 6px; }
 @media (max-width: 560px) {
-  .side { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); width: auto; left: max(16px, env(safe-area-inset-left, 0px));
+  .rightcol { display: contents; }
+  .title { max-width: calc(100vw - 32px - 120px); }
+  .mapwrap { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 16px); right: max(16px, env(safe-area-inset-right, 0px)); width: 110px; }
+  .mapwrap h2 { display: none; }
+  body.walking .side { display: none; }
+  .side { position: fixed; top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); width: auto; left: max(16px, env(safe-area-inset-left, 0px));
     flex-direction: row; flex-wrap: wrap; column-gap: 12px; row-gap: 0; padding: 8px 12px; }
   .side h2, .side .all { display: none; }
+  .bar button { padding: 7px 9px; }
   .side label { font-size: .8rem; }
 }
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: .9rem; pointer-events: none; }
@@ -54,7 +79,8 @@ button[aria-pressed="true"] { background: var(--accent); color: var(--bg); borde
 <body>
 <div id="stage"></div>
 <div id="status">Cargando modelo…</div>
-<div class="hud top"><div class="card title"><h1>Hub</h1><p>Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar</p></div></div>
+<div class="hud top"><div class="card title"><h1>Hub</h1><p id="hint">Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar</p></div></div>
+<div class="rightcol">
 <div class="card side" id="layers">
   <h2>Mostrar</h2>
   <label><input type="checkbox" id="l-izq" data-group="izq" checked> Pared izquierda</label>
@@ -65,11 +91,40 @@ button[aria-pressed="true"] { background: var(--accent); color: var(--bg); borde
   <label><input type="checkbox" id="l-colg" data-group="colg" checked> Luces y nubes</label>
   <button type="button" class="all" id="b-all">Mostrar todo</button>
 </div>
+<div class="card mapwrap">
+  <h2>Plano · clic para ir</h2>
+  <div id="minimap" role="button" tabindex="0" aria-label="Plano del Hub: haz clic en un punto para recorrerlo desde ahí"><canvas id="mapmarks"></canvas></div>
+</div>
+</div>
+<div id="joy" class="card" hidden><div id="knob"></div></div>
+<div class="card help" id="help" hidden>
+  <h2>Vista general</h2>
+  <dl>
+    <dt>Arrastrar</dt><dd>Girar alrededor del modelo</dd>
+    <dt>Rueda · <kbd>+</kbd> <kbd>−</kbd></dt><dd>Acercar y alejar</dd>
+    <dt>Clic derecho · <kbd>← ↑ → ↓</kbd></dt><dd>Desplazar</dd>
+    <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Perspectiva, planta, frontal</dd>
+  </dl>
+  <h2>Recorrer</h2>
+  <dl>
+    <dt><kbd>C</kbd> o clic en el plano</dt><dd>Entrar caminando</dd>
+    <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <kbd>↑ ↓</kbd></dt><dd>Avanzar, retroceder y moverse de lado</dd>
+    <dt><kbd>← →</kbd> · arrastrar</dt><dd>Girar la mirada</dd>
+    <dt><kbd>Shift</kbd></dt><dd>Caminar más rápido</dd>
+    <dt>Joystick</dt><dd>Moverse en pantallas táctiles</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Volver a la vista general</dd>
+  </dl>
+</div>
 <div class="hud bottom"><div class="card bar">
   <button id="b-persp" type="button">Perspectiva</button>
   <button id="b-top" type="button">Planta</button>
   <button id="b-front" type="button">Frontal</button>
   <button id="b-spin" type="button" aria-pressed="false">Girar</button>
+  <span class="sep"></span>
+  <button id="b-walk" type="button" aria-pressed="false">Recorrer</button>
+  <button id="b-out" type="button" aria-label="Alejar">−</button>
+  <button id="b-in" type="button" aria-label="Acercar">+</button>
+  <button id="b-help" type="button" aria-pressed="false">Controles</button>
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -198,18 +253,213 @@ new THREE.GLTFLoader().loadAsync('hub.glb').then(gltf => {
   const sc = sun.shadow.camera; sc.left = sc.bottom = -radius; sc.right = sc.top = radius; sc.far = radius * 6; sc.updateProjectionMatrix();
   controls.maxDistance = radius * 6;
   view(views.persp);
+  setupMap(box);
   status.hidden = true;
 }).catch(err => { status.textContent = 'No se pudo cargar el modelo. Recarga la página.'; console.error(err); });
 
-document.getElementById('b-persp').onclick = () => view(views.persp);
-document.getElementById('b-top').onclick = () => view(views.top);
-document.getElementById('b-front').onclick = () => view(views.front);
+const $ = id => document.getElementById(id);
+const orbitView = v => { if (walking) exitWalk(); view(views[v]); };
+$('b-persp').onclick = () => orbitView('persp');
+$('b-top').onclick = () => orbitView('top');
+$('b-front').onclick = () => orbitView('front');
+controls.listenToKeyEvents(window);
+controls.keyPanSpeed = 14;
 const spin = document.getElementById('b-spin');
 spin.onclick = () => { controls.autoRotate = !controls.autoRotate; spin.setAttribute('aria-pressed', controls.autoRotate); };
 
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+// ---------- Recorrer (primera persona) ----------
+// Interior del recinto en coordenadas de Blender (m). En three: x = x, z = -y.
+const ROOM = { x0: 0.3, x1: 5.36, y1: 7.5, yFront: 0.35, yDoor: 0.7, doorX: 4.5 };
+const EYE = 1.6, WALK_SPEED = 1.4;
+let walking = false, yaw = 0, pitch = 0;
+const keys = new Set(), joyVec = { x: 0, y: 0 };
+const coarse = matchMedia('(pointer: coarse)').matches;
+
+function clampToRoom(p) {
+  p.x = Math.min(ROOM.x1, Math.max(ROOM.x0, p.x));
+  const yMin = p.x >= ROOM.doorX ? ROOM.yDoor : ROOM.yFront;
+  p.z = Math.min(-yMin, Math.max(-ROOM.y1, p.z));
+  p.y = EYE;
+}
+function applyLook() { camera.rotation.set(pitch, yaw, 0, 'YXZ'); }
+function enterWalk(x, z, lookYaw) {
+  walking = true; controls.enabled = false; controls.autoRotate = false; spin.setAttribute('aria-pressed', false);
+  camera.fov = 70; camera.near = 0.05; camera.updateProjectionMatrix();
+  camera.position.set(x, EYE, z); clampToRoom(camera.position);
+  yaw = lookYaw ?? 0; pitch = -0.08; applyLook();
+  document.body.classList.add('walking');
+  $('b-walk').setAttribute('aria-pressed', true);
+  $('joy').hidden = !coarse;
+  $('hint').textContent = coarse ? 'Joystick para moverte · arrastra para mirar' : 'W A S D para moverte · arrastra para mirar · Esc para salir';
+}
+function exitWalk() {
+  walking = false; controls.enabled = true; keys.clear();
+  camera.fov = 45; camera.near = radius / 200; camera.updateProjectionMatrix();
+  document.body.classList.remove('walking');
+  $('b-walk').setAttribute('aria-pressed', false);
+  $('joy').hidden = true;
+  $('hint').textContent = 'Arrastra para girar · rueda o pellizco para zoom · clic derecho para desplazar';
+  view(views.persp);
+}
+// Entrada por la puerta, mirando hacia el fondo
+const startWalk = () => enterWalk(2.8, -0.9, 0);
+$('b-walk').onclick = () => walking ? exitWalk() : startWalk();
+
+// Mirar arrastrando
+let drag = null;
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (!walking || e.button !== 0) return;
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const k = coarse ? 0.006 : 0.004;
+  yaw -= (e.clientX - drag.x) * k; pitch -= (e.clientY - drag.y) * k;
+  pitch = Math.max(-1.35, Math.min(1.35, pitch));
+  drag.x = e.clientX; drag.y = e.clientY; applyLook();
+});
+const endDrag = e => { if (drag && e.pointerId === drag.id) drag = null; };
+renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointercancel', endDrag);
+renderer.domElement.addEventListener('wheel', e => {
+  if (!walking) return;
+  e.preventDefault(); moveBy(-Math.sign(e.deltaY) * 0.35, 0);
+}, { passive: false });
+
+function moveBy(fwd, side) {
+  const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), r = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  camera.position.addScaledVector(f, fwd).addScaledVector(r, side); clampToRoom(camera.position);
+}
+
+// Joystick táctil
+const joy = $('joy'), knob = $('knob'); let joyId = null;
+function joyMove(e) {
+  const r = joy.getBoundingClientRect(), R = r.width / 2;
+  let dx = e.clientX - (r.left + R), dy = e.clientY - (r.top + R);
+  const len = Math.hypot(dx, dy), max = R - 10;
+  if (len > max) { dx *= max / len; dy *= max / len; }
+  knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  joyVec.x = dx / max; joyVec.y = -dy / max;
+}
+joy.addEventListener('pointerdown', e => { joyId = e.pointerId; joy.setPointerCapture(joyId); joyMove(e); });
+joy.addEventListener('pointermove', e => { if (e.pointerId === joyId) joyMove(e); });
+const joyEnd = e => { if (e.pointerId !== joyId) return; joyId = null; joyVec.x = joyVec.y = 0; knob.style.transform = ''; };
+joy.addEventListener('pointerup', joyEnd); joy.addEventListener('pointercancel', joyEnd);
+
+// Teclado
+addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input, textarea')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (walking) {
+    if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)) {
+      keys.add(e.code); e.preventDefault(); e.stopImmediatePropagation(); return;
+    }
+    if (e.code === 'Escape' || e.code === 'KeyC') { exitWalk(); return; }
+  } else {
+    if (e.code === 'KeyC') { startWalk(); return; }
+    if (e.key === '1') orbitView('persp');
+    if (e.key === '2') orbitView('top');
+    if (e.key === '3') orbitView('front');
+  }
+  if (e.key === '+' || e.code === 'NumpadAdd') zoom(0.8);
+  if (e.key === '-' || e.code === 'NumpadSubtract') zoom(1.25);
+  if (e.key === '?') toggleHelp();
+  if (e.code === 'Escape' && !$('help').hidden) toggleHelp();
+}, true);
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+
+function zoom(f) {
+  if (walking) { moveBy(f < 1 ? 0.5 : -0.5, 0); return; }
+  const off = camera.position.clone().sub(controls.target).multiplyScalar(f);
+  const len = Math.min(controls.maxDistance, Math.max(0.5, off.length()));
+  camera.position.copy(controls.target).add(off.setLength(len)); controls.update();
+}
+$('b-in').onclick = () => zoom(0.8);
+$('b-out').onclick = () => zoom(1.25);
+function toggleHelp() { const h = $('help'); h.hidden = !h.hidden; $('b-help').setAttribute('aria-pressed', !h.hidden); }
+$('b-help').onclick = toggleHelp;
+
+// ---------- Plano (minimapa) ----------
+const mapEl = $('minimap'), marks = $('mapmarks'), mctx = marks.getContext('2d');
+const mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
+let mapBox = null;
+function setupMap(box) {
+  mapBox = box.clone();
+  const w = box.max.x - box.min.x, d = box.max.z - box.min.z, c = box.getCenter(new THREE.Vector3());
+  mapCam.left = -w / 2; mapCam.right = w / 2; mapCam.top = d / 2; mapCam.bottom = -d / 2;
+  mapCam.position.set(c.x, box.max.y + 2, c.z); mapCam.up.set(0, 0, -1); mapCam.lookAt(c.x, 0, c.z);
+  mapCam.far = box.max.y - box.min.y + 4; mapCam.updateProjectionMatrix();
+  mapEl.style.aspectRatio = `${w} / ${d}`;
+}
+const toMap = (x, z, W, H) => [(x - mapBox.min.x) / (mapBox.max.x - mapBox.min.x) * W, (z - mapBox.min.z) / (mapBox.max.z - mapBox.min.z) * H];
+function goToMapPoint(clientX, clientY) {
+  if (!mapBox) return;
+  const r = mapEl.getBoundingClientRect();
+  const x = mapBox.min.x + (clientX - r.left) / r.width * (mapBox.max.x - mapBox.min.x);
+  const z = mapBox.min.z + (clientY - r.top) / r.height * (mapBox.max.z - mapBox.min.z);
+  enterWalk(x, z, walking ? yaw : 0);
+}
+mapEl.addEventListener('click', e => goToMapPoint(e.clientX, e.clientY));
+mapEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); walking ? exitWalk() : startWalk(); } });
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const mapBg = new THREE.Color(), prevClear = new THREE.Color();
+function renderMap() {
+  if (!mapBox) return;
+  const r = mapEl.getBoundingClientRect();
+  if (!r.width) return;
+  // Planta sin techo ni elementos colgantes
+  const hidden = [...groups.techo, ...groups.colg].filter(o => o.visible);
+  hidden.forEach(o => o.visible = false);
+  renderer.getClearColor(prevClear); const prevAlpha = renderer.getClearAlpha();
+  mapBg.setStyle(css('--map') || '#f6f7f8');
+  renderer.setClearColor(mapBg, 1);
+  renderer.shadowMap.autoUpdate = false;
+  const y = innerHeight - r.bottom;
+  renderer.setScissorTest(true);
+  renderer.setScissor(r.left, y, r.width, r.height); renderer.setViewport(r.left, y, r.width, r.height);
+  renderer.clear(); renderer.render(scene, mapCam);
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight);
+  renderer.shadowMap.autoUpdate = true;
+  renderer.setClearColor(prevClear, prevAlpha);
+  hidden.forEach(o => o.visible = true);
+
+  // Marcador de posición y dirección
+  const dpr = Math.min(devicePixelRatio, 2), W = r.width, H = r.height;
+  if (marks.width !== Math.round(W * dpr)) { marks.width = Math.round(W * dpr); marks.height = Math.round(H * dpr); }
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H);
+  const col = css('--marker') || '#d9481c';
+  const p = walking ? camera.position : controls.target;
+  const [mx, my] = toMap(p.x, p.z, W, H);
+  const dir = walking ? yaw : Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
+  // yaw 0 = mirando hacia -z (arriba en el plano)
+  const a = -dir - Math.PI / 2, spread = 0.55, len = walking ? 26 : 18;
+  mctx.fillStyle = col; mctx.globalAlpha = 0.25;
+  mctx.beginPath(); mctx.moveTo(mx, my);
+  mctx.arc(mx, my, len, a - spread, a + spread); mctx.closePath(); mctx.fill();
+  mctx.globalAlpha = 1; mctx.beginPath(); mctx.arc(mx, my, 4.5, 0, Math.PI * 2); mctx.fill();
+  mctx.lineWidth = 1.5; mctx.strokeStyle = css('--map') || '#fff'; mctx.stroke();
+}
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (walking) {
+    const run = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.2 : 1;
+    const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + joyVec.y;
+    const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) + joyVec.x;
+    const turn = (keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0);
+    if (turn) { yaw += turn * 1.8 * dt; applyLook(); }
+    if (fwd || side) moveBy(fwd * WALK_SPEED * run * dt, side * WALK_SPEED * run * dt);
+  } else controls.update();
+  renderer.render(scene, camera);
+  renderMap();
+});
 </script>
 </body>
 </html>
