@@ -85,6 +85,18 @@ kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom
   .bar button { padding: 7px 9px; }
   .side label { font-size: .8rem; }
 }
+.movebar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+  display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; max-width: calc(100vw - 32px); }
+.movebar span { font-size: .84rem; color: var(--muted); margin-right: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+.movebar span.sel { color: var(--fg); font-weight: 500; }
+.movebar button { flex: none; }
+.movebar button:disabled { opacity: .4; cursor: default; color: var(--fg); border-color: var(--line); }
+body.moving .help { bottom: calc(env(safe-area-inset-bottom, 0px) + 128px); }
+@media (max-width: 560px) {
+  .movebar { left: max(16px, env(safe-area-inset-left, 0px)); transform: none; max-width: calc(100vw - 32px - 180px); flex-wrap: wrap; }
+  .movebar span { flex-basis: 100%; }
+  body.moving .side { display: none; }
+}
 #status { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: .9rem; pointer-events: none; }
 </style>
 </head>
@@ -131,6 +143,28 @@ kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom
     <dt><kbd>← →</kbd> · <kbd>Shift</kbd></dt><dd>Teclado: girar · ir más rápido</dd>
     <dt><kbd>Esc</kbd></dt><dd>Volver a la vista general</dd>
   </dl>
+  <h2>Mover muebles</h2>
+  <dl>
+    <dt>Mover muebles</dt><dd>Activa el modo; luego arrastra mesas, escritorios, sillas o sillones</dd>
+    <dt>⟲ ⟳ · <kbd>Q</kbd> <kbd>E</kbd></dt><dd>Girar el mueble seleccionado</dd>
+    <dt>Restablecer</dt><dd>Volver a la distribución original (se guarda en este navegador)</dd>
+  </dl>
+  <h2>Realidad virtual (Meta Quest)</h2>
+  <dl>
+    <dt>Entrar en VR</dt><dd>Abre esta página en el navegador del Quest y pulsa el botón</dd>
+    <dt>Gatillo</dt><dd>Apuntando al piso: teletransportarse · a la puerta: abrir o cerrar</dd>
+    <dt>Stick izquierdo</dt><dd>Caminar hacia donde miras</dd>
+    <dt>Stick derecho</dt><dd>Girar de a 30°</dd>
+    <dt>Botón A o X</dt><dd>Cambiar entre versión 1 y 2</dd>
+    <dt>Botón B o Y</dt><dd>Abrir o cerrar la puerta</dd>
+    <dt>Botón lateral (grip)</dt><dd>Mantener apuntando a un mueble para arrastrarlo · stick de esa mano para girarlo</dd>
+  </dl>
+</div>
+<div class="card movebar" id="movebar" hidden>
+  <span id="m-name">Arrastra un mueble para moverlo</span>
+  <button type="button" id="m-left" aria-label="Girar a la izquierda" title="Girar a la izquierda (Q)" disabled>⟲</button>
+  <button type="button" id="m-right" aria-label="Girar a la derecha" title="Girar a la derecha (E)" disabled>⟳</button>
+  <button type="button" id="m-reset">Restablecer</button>
 </div>
 <div class="hud bottom"><div class="card bar">
   <button id="b-persp" type="button">Perspectiva</button>
@@ -141,7 +175,9 @@ kbd { font: 500 .74rem var(--body); border: 1px solid var(--line); border-bottom
   <button id="b-walk" type="button" aria-pressed="false">Recorrer</button>
   <button id="b-out" type="button" aria-label="Alejar">−</button>
   <button id="b-in" type="button" aria-label="Acercar">+</button>
+  <button id="b-move" type="button" aria-pressed="false">Mover muebles</button>
   <button id="b-help" type="button" aria-pressed="false">Controles</button>
+  <button id="b-vr" type="button" hidden>Entrar en VR</button>
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -246,7 +282,7 @@ const VERSIONS = { 1: 'hub.glb', 2: 'hub_v2.glb' };
 const fetchModel = v => new THREE.GLTFLoader().loadAsync(VERSIONS[v]);
 const loaded = {}, loading = {};
 let current = null, wanted = null, firstView = true;
-function prepare(model) {
+function prepare(model, v) {
   model.traverse(o => {
     if (!o.isMesh) return;
     o.castShadow = o.receiveShadow = true;
@@ -263,10 +299,12 @@ function prepare(model) {
       o.castShadow = false; o.renderOrder = 1;
     }
   });
+  setupFurniture(model, v);
   return model;
 }
 function activate(v, model) {
   if (modelRoot) scene.remove(modelRoot);
+  select(null); mDrag = null; controllers.forEach(c => { c.userData.grab = null; });
   scene.add(model); modelRoot = model; current = v;
   for (const k in groups) groups[k].length = 0;
   DOOR.leaves.length = 0; DOOR.t = 0; DOOR.manual = null;
@@ -288,16 +326,19 @@ function activate(v, model) {
     view(views.persp); firstView = false;
   }
   setupMap(box);
+  renderer.shadowMap.needsUpdate = true;
+  if (inVR) vrToast('Versión ' + v);
   document.querySelectorAll('#versions button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v == v));
   try { localStorage.setItem('hub-version', v); } catch (e) {}
 }
 function load(v) {
-  return loading[v] ??= fetchModel(v).then(g => (loaded[v] = prepare(g.scene)));
+  return loading[v] ??= fetchModel(v).then(g => (loaded[v] = prepare(g.scene, v)));
 }
 function showVersion(v) {
   wanted = v;
   if (loaded[v]) { activate(v, loaded[v]); return; }
   status.hidden = false; status.textContent = `Cargando versión ${v}…`;
+  if (inVR) vrToast(`Cargando versión ${v}…`, 60);
   load(v).then(m => {
     if (wanted !== v) return;
     activate(v, m); status.hidden = true;
@@ -305,6 +346,7 @@ function showVersion(v) {
   }).catch(err => {
     delete loading[v];
     status.textContent = 'No se pudo cargar el modelo. Recarga la página.'; console.error(err);
+    if (inVR) vrToast('No se pudo cargar la versión ' + v, 4);
   });
 }
 document.querySelectorAll('#versions button').forEach(b => b.onclick = () => showVersion(+b.dataset.v));
@@ -323,7 +365,7 @@ controls.keyPanSpeed = 14;
 const spin = document.getElementById('b-spin');
 spin.onclick = () => { controls.autoRotate = !controls.autoRotate; spin.setAttribute('aria-pressed', controls.autoRotate); };
 
-function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+function resize() { if (renderer.xr.isPresenting) return; const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 
 // ---------- Recorrer (primera persona) ----------
@@ -334,12 +376,13 @@ let walking = false, yaw = 0, pitch = 0;
 const keys = new Set(), joyVec = { x: 0, y: 0 };
 const coarse = matchMedia('(pointer: coarse)').matches;
 
-function clampToRoom(p) {
+function clampXZ(p) {
   p.x = Math.min(ROOM.x1, Math.max(ROOM.x0, p.x));
   const yMin = p.x >= ROOM.doorX ? ROOM.yDoor : ROOM.yFront;
   p.z = Math.min(-yMin, Math.max(-ROOM.y1, p.z));
-  p.y = EYE;
+  return p;
 }
+function clampToRoom(p) { clampXZ(p); p.y = EYE; }
 function applyLook() { camera.rotation.set(pitch, yaw, 0, 'YXZ'); }
 function enterWalk(x, z, lookYaw) {
   walking = true; controls.enabled = false; controls.autoRotate = false; spin.setAttribute('aria-pressed', false);
@@ -399,18 +442,26 @@ const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 40).rotateX(-Math
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
 ring.renderOrder = 5; ring.visible = false; scene.add(ring);
 function isShown(o) { for (; o; o = o.parent) if (!o.visible) return false; return true; }
-function pick(e) {
+function pick(e, skipCeiling) {
   if (!modelRoot) return null;
+  setRay(e);
+  return castRay(skipCeiling);
+}
+function setRay(e) {
   const r = renderer.domElement.getBoundingClientRect();
   ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
+}
+function inGroups(o, gs) { for (; o; o = o.parent) for (const g of gs) if (groups[g].includes(o)) return true; return false; }
+function castRay(skipCeiling = false) {
   for (const h of raycaster.intersectObject(modelRoot, true)) {
     if (!isShown(h.object)) continue;
+    if (skipCeiling && inGroups(h.object, ['techo', 'colg'])) continue; // al mover muebles, el techo no estorba
     const m = h.object.material;
     if (m && m.transparent && m.opacity < 0.5) continue; // atravesar el vidrio
     const n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new THREE.Vector3();
     let door = false; for (let o = h.object; o; o = o.parent) if (/^Puerta_Hoja/.test(o.name)) door = true;
-    return { point: h.point, floor: n.y > 0.7 && h.point.y < 0.3, door };
+    return { point: h.point, distance: h.distance, object: h.object, floor: n.y > 0.7 && h.point.y < 0.3, door };
   }
   return null;
 }
@@ -490,7 +541,11 @@ joy.addEventListener('pointerup', joyEnd); joy.addEventListener('pointercancel',
 // ---------- Puerta corredera ----------
 // Se abre sola al acercarse caminando; un clic sobre una hoja la abre o la cierra.
 const DOOR = { x: 3.15, z: 0.075, travel: 0.70, t: 0, manual: null, leaves: [] };
-const doorNear = () => walking && Math.hypot(camera.position.x - DOOR.x, camera.position.z - DOOR.z) < 2.2;
+const doorNear = () => {
+  if (!walking && !inVR) return false;
+  const p = inVR ? headWorld() : camera.position;
+  return Math.hypot(p.x - DOOR.x, p.z - DOOR.z) < 2.2;
+};
 function toggleDoor() { DOOR.manual = !((DOOR.manual ?? doorNear()) ); }
 let wasNear = false;
 function stepDoor(dt) {
@@ -523,6 +578,9 @@ function orbitBy(dTheta, dPhi) {
 addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('input, textarea')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (moveMode && selected && (e.code === 'KeyQ' || e.code === 'KeyE')) {
+    rotateFurniture(selected, (e.code === 'KeyQ' ? 1 : -1) * Math.PI / 12); saveLayout(); e.preventDefault(); return;
+  }
   if (walking) {
     if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)) {
       keys.add(e.code); e.preventDefault(); e.stopImmediatePropagation(); return;
@@ -617,10 +675,318 @@ function renderMap() {
   mctx.lineWidth = 1.5; mctx.strokeStyle = css('--map') || '#fff'; mctx.stroke();
 }
 
+// ---------- Mover muebles ----------
+// Muebles de piso que se pueden mover; lo que está encima (pantallas, impresoras, notebooks)
+// se cuelga del mueble para moverse con él. La distribución se guarda por versión en este navegador.
+const MOVABLE = /^(Mesa_|Escritorio_|Silla_Oficina_|Sillon|Cajonera$|Mueble_Notebooks$)/;
+const RIDER = /^(Pantalla_|Impresora_|Notebooks$)/;
+const BOUNDS = { x0: 0.0, x1: 5.66, z0: -7.72, z1: 0.0 }; // interior entre muros (m, coords three)
+const tmpBox = new THREE.Box3(), tmpC = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), Y_AXIS = new THREE.Vector3(0, 1, 0);
+const layoutKey = v => 'hub-layout-v' + v;
+function readLayout(v) { try { return JSON.parse(localStorage.getItem(layoutKey(v))) || {}; } catch (e) { return {}; } }
+function setupFurniture(model, v) {
+  model.updateMatrixWorld(true);
+  const roots = model.children.slice();
+  const bases = roots.filter(o => MOVABLE.test(o.name)).map(o => ({ o, box: new THREE.Box3().setFromObject(o) }));
+  for (const r of roots.filter(o => RIDER.test(o.name))) {
+    const rb = new THREE.Box3().setFromObject(r), c = rb.getCenter(new THREE.Vector3());
+    const b = bases.find(({ box }) => c.x >= box.min.x && c.x <= box.max.x && c.z >= box.min.z && c.z <= box.max.z
+      && rb.min.y >= box.min.y - 0.02 && rb.min.y <= box.max.y + 0.05);
+    if (b) b.o.attach(r);
+  }
+  const saved = readLayout(v);
+  for (const { o } of bases) {
+    o.userData.movable = true;
+    o.userData.orig = { p: o.position.clone(), q: o.quaternion.clone() };
+    const s = saved[o.name];
+    if (Array.isArray(s) && s.length === 6) { o.position.x = s[0]; o.position.z = s[1]; o.quaternion.set(s[2], s[3], s[4], s[5]); }
+  }
+  model.userData.furniture = bases.map(b => b.o);
+}
+function movableOf(obj) { for (let o = obj; o; o = o.parent) if (o.userData.movable) return o; return null; }
+const label = o => o.name.replace(/_/g, ' ');
+function keepInside(o) {
+  o.updateMatrixWorld(true);
+  const b = tmpBox.setFromObject(o);
+  if (b.min.x < BOUNDS.x0) o.position.x += BOUNDS.x0 - b.min.x; else if (b.max.x > BOUNDS.x1) o.position.x += BOUNDS.x1 - b.max.x;
+  if (b.min.z < BOUNDS.z0) o.position.z += BOUNDS.z0 - b.min.z; else if (b.max.z > BOUNDS.z1) o.position.z += BOUNDS.z1 - b.max.z;
+}
+function rotateFurniture(o, a) {
+  o.updateMatrixWorld(true);
+  tmpBox.setFromObject(o).getCenter(tmpC);
+  o.position.sub(tmpC).applyAxisAngle(Y_AXIS, a).add(tmpC);
+  o.quaternion.premultiply(tmpQ.setFromAxisAngle(Y_AXIS, a));
+  keepInside(o); renderer.shadowMap.needsUpdate = true;
+  if (selBox.visible && selBox.object === o) selBox.update();
+}
+function saveLayout() {
+  if (!modelRoot || !modelRoot.userData.furniture) return;
+  const r = x => Math.round(x * 10000) / 10000, out = {};
+  for (const o of modelRoot.userData.furniture) {
+    const { p, q } = o.userData.orig;
+    if (o.position.distanceTo(p) > 1e-4 || Math.abs(o.quaternion.dot(q)) < 1 - 1e-7)
+      out[o.name] = [r(o.position.x), r(o.position.z), ...o.quaternion.toArray().map(r)];
+  }
+  try { localStorage.setItem(layoutKey(current), JSON.stringify(out)); } catch (e) {}
+}
+function resetLayout() {
+  if (!modelRoot || !modelRoot.userData.furniture) return;
+  for (const o of modelRoot.userData.furniture) { o.position.copy(o.userData.orig.p); o.quaternion.copy(o.userData.orig.q); }
+  try { localStorage.removeItem(layoutKey(current)); } catch (e) {}
+  renderer.shadowMap.needsUpdate = true;
+  if (selected) selBox.update();
+}
+
+// Selección (caja de contorno) y modo mover en pantalla
+const selBox = new THREE.BoxHelper(undefined, 0xd9481c);
+selBox.material.depthTest = false; selBox.material.transparent = true; selBox.material.toneMapped = false;
+selBox.renderOrder = 6; selBox.visible = false; scene.add(selBox);
+let moveMode = false, selected = null, mDrag = null;
+const mName = $('m-name');
+function showBox(o) {
+  if (o) { selBox.material.color.setStyle(css('--marker') || '#d9481c'); selBox.setFromObject(o); selBox.visible = true; }
+  else selBox.visible = false;
+}
+function select(o) {
+  selected = o; showBox(o);
+  mName.textContent = o ? label(o) : 'Arrastra un mueble para moverlo';
+  mName.classList.toggle('sel', !!o);
+  $('m-left').disabled = $('m-right').disabled = !o;
+}
+function setMoveMode(on) {
+  moveMode = on; mDrag = null; if (!on) select(null);
+  $('movebar').hidden = !on; $('b-move').setAttribute('aria-pressed', on);
+  document.body.classList.toggle('moving', on);
+  renderer.domElement.style.cursor = '';
+}
+$('b-move').onclick = () => setMoveMode(!moveMode);
+$('m-left').onclick = () => { if (selected) { rotateFurniture(selected, Math.PI / 12); saveLayout(); } };
+$('m-right').onclick = () => { if (selected) { rotateFurniture(selected, -Math.PI / 12); saveLayout(); } };
+$('m-reset').onclick = resetLayout;
+
+// Arrastre con mouse o dedo: el mueble sigue al puntero sobre un plano horizontal
+// a la altura del punto agarrado. Escucha en captura para adelantarse a la órbita y al recorrido.
+const grabPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planeHit = new THREE.Vector3();
+const cvs = renderer.domElement;
+cvs.addEventListener('pointerdown', e => {
+  if (!moveMode || inVR || e.button !== 0) return;
+  const h = pick(e, true), o = h && movableOf(h.object);
+  if (!o) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  select(o); downAt = null; glide = look = null;
+  grabPlane.constant = -h.point.y;
+  mDrag = { id: e.pointerId, ox: o.position.x - h.point.x, oz: o.position.z - h.point.z };
+  cvs.setPointerCapture(e.pointerId); cvs.style.cursor = 'grabbing';
+}, true);
+cvs.addEventListener('pointermove', e => {
+  if (mDrag && e.pointerId === mDrag.id) {
+    e.stopImmediatePropagation();
+    setRay(e);
+    if (raycaster.ray.intersectPlane(grabPlane, planeHit)) {
+      selected.position.x = planeHit.x + mDrag.ox; selected.position.z = planeHit.z + mDrag.oz;
+      keepInside(selected); renderer.shadowMap.needsUpdate = true;
+    }
+    return;
+  }
+  if (moveMode && !inVR && !e.buttons && e.pointerType === 'mouse') {
+    const h = pick(e, true);
+    if (h && movableOf(h.object)) { cvs.style.cursor = 'grab'; ring.visible = false; e.stopImmediatePropagation(); }
+    else cvs.style.cursor = '';
+  }
+}, true);
+const endMove = e => {
+  if (!mDrag || e.pointerId !== mDrag.id) return;
+  e.stopImmediatePropagation();
+  mDrag = null; cvs.style.cursor = 'grab'; saveLayout();
+};
+cvs.addEventListener('pointerup', endMove, true);
+cvs.addEventListener('pointercancel', endMove, true);
+
+// ---------- Realidad virtual (WebXR · Meta Quest) ----------
+// En VR la cámara va dentro de un "dolly": las gafas mueven la cámara dentro de él
+// y la locomoción (teletransporte, stick, giro) mueve el dolly. 1 unidad = 1 metro.
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+const dolly = new THREE.Group(); scene.add(dolly);
+const UP = new THREE.Vector3(0, 1, 0), tmpHead = new THREE.Vector3(), fwdV = new THREE.Vector3(), rightV = new THREE.Vector3(), tmpM = new THREE.Matrix4();
+const vrBg = new THREE.Color();
+let inVR = false, markerColor = new THREE.Color(0xd9481c);
+const headWorld = () => camera.getWorldPosition(tmpHead);
+
+const vrBtn = $('b-vr');
+if (navigator.xr && navigator.xr.isSessionSupported)
+  navigator.xr.isSessionSupported('immersive-vr').then(ok => { vrBtn.hidden = !ok; }).catch(() => {});
+vrBtn.onclick = async () => {
+  if (inVR) { const s = renderer.xr.getSession(); if (s) s.end(); return; }
+  try {
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
+    await renderer.xr.setSession(session);
+  } catch (err) {
+    console.error(err);
+    status.hidden = false; status.textContent = 'No se pudo entrar en VR.';
+    setTimeout(() => { status.hidden = true; }, 3000);
+  }
+};
+
+// Mensajes flotantes delante de la vista
+const toastCanvas = document.createElement('canvas'); toastCanvas.width = 1024; toastCanvas.height = 256;
+const toastTex = new THREE.CanvasTexture(toastCanvas); toastTex.encoding = THREE.sRGBEncoding;
+const toast = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.2),
+  new THREE.MeshBasicMaterial({ map: toastTex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+toast.position.set(0, -0.18, -1.2); toast.renderOrder = 10; toast.visible = false; camera.add(toast);
+let toastTimer = 0;
+function vrToast(text, secs = 2.5) {
+  if (!inVR) return;
+  const g = toastCanvas.getContext('2d'), [l1, l2] = text.split('\n');
+  g.clearRect(0, 0, 1024, 256);
+  g.fillStyle = 'rgba(20,24,28,.84)'; g.beginPath();
+  const y0 = l2 ? 28 : 64, h = l2 ? 200 : 128;
+  if (g.roundRect) g.roundRect(8, y0, 1008, h, 36); else g.rect(8, y0, 1008, h);
+  g.fill();
+  g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '600 64px "Space Grotesk", system-ui, sans-serif'; g.fillText(l1, 512, l2 ? 96 : 128);
+  if (l2) { g.font = '500 34px Inter, system-ui, sans-serif'; g.fillStyle = '#c9d2d9'; g.fillText(l2, 512, 178); }
+  toastTex.needsUpdate = true; toast.visible = true; toastTimer = secs;
+}
+
+// Mandos: rayo para apuntar y anillo en el piso donde se va a aparecer
+const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]);
+const controllers = [0, 1].map(i => {
+  const c = renderer.xr.getController(i);
+  const ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, toneMapped: false }));
+  ray.scale.z = 5; c.add(ray);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+  c.add(tip);
+  const marker = new THREE.Mesh(ring.geometry, ring.material.clone());
+  marker.renderOrder = 5; marker.visible = false; scene.add(marker);
+  c.userData = { ray, marker, source: null, hit: null, prev: [], turned: false, grab: null };
+  c.addEventListener('connected', e => { c.userData.source = e.data; });
+  c.addEventListener('disconnected', () => { vrRelease(c); c.userData.source = null; c.userData.hit = null; marker.visible = false; });
+  c.addEventListener('squeezestart', () => vrGrab(c));
+  c.addEventListener('squeezeend', () => vrRelease(c));
+  c.addEventListener('select', () => vrSelect(c));
+  dolly.add(c);
+  return c;
+});
+function vrPick(c) {
+  tmpM.identity().extractRotation(c.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+  return castRay();
+}
+// Agarrar muebles con el botón lateral: el mueble sigue al rayo sobre un plano a la altura agarrada
+function vrGrab(c) {
+  const h = c.userData.hit, o = h && movableOf(h.object);
+  if (!o || controllers.some(k => k.userData.grab && k.userData.grab.o === o)) return;
+  c.userData.grab = { o, y: h.point.y, ox: o.position.x - h.point.x, oz: o.position.z - h.point.z };
+  vrToast(label(o), 1.5);
+}
+function vrRelease(c) {
+  if (!c.userData.grab) return;
+  c.userData.grab = null; saveLayout(); renderer.shadowMap.needsUpdate = true;
+}
+function vrSelect(c) {
+  if (c.userData.grab) return;
+  const h = c.userData.hit; if (!h) return;
+  if (h.door) toggleDoor();
+  else if (h.floor) teleportTo(h.point);
+}
+// Desplaza el dolly para que la cabeza quede en el punto (x, z) dado, dentro del recinto
+function placeHead(to) {
+  const head = headWorld(); clampXZ(to);
+  dolly.position.x += to.x - head.x; dolly.position.z += to.z - head.z;
+}
+function teleportTo(p) { placeHead(p.clone()); }
+function snapTurn(a) {
+  const head = headWorld().clone();
+  dolly.position.sub(head).applyAxisAngle(UP, a).add(head);
+  dolly.rotation.y += a;
+}
+function vrMove(x, y, dt) {
+  camera.getWorldDirection(fwdV); fwdV.y = 0;
+  if (fwdV.lengthSq() < 1e-6) return; fwdV.normalize();
+  rightV.set(-fwdV.z, 0, fwdV.x);
+  const to = headWorld().clone().addScaledVector(fwdV, -y * WALK_SPEED * dt).addScaledVector(rightV, x * WALK_SPEED * dt);
+  placeHead(to);
+}
+function stepVR(dt) {
+  if (toastTimer > 0 && (toastTimer -= dt) <= 0) toast.visible = false;
+  dolly.updateMatrixWorld(true);
+  let boxed = null;
+  for (const c of controllers) {
+    const u = c.userData, src = u.source;
+    if (!src) continue;
+    const h = u.hit = modelRoot ? vrPick(c) : null;
+    const g = u.grab, hov = !g && h && movableOf(h.object);
+    if (g) {
+      grabPlane.constant = -g.y;
+      const hitP = raycaster.ray.intersectPlane(grabPlane, planeHit);
+      if (hitP && hitP.distanceTo(raycaster.ray.origin) < 15) {
+        g.o.position.x = planeHit.x + g.ox; g.o.position.z = planeHit.z + g.oz; keepInside(g.o);
+        renderer.shadowMap.needsUpdate = true;
+      }
+      u.ray.scale.z = Math.max(0.05, planeHit.distanceTo(raycaster.ray.origin));
+      boxed = g.o;
+    } else {
+      u.ray.scale.z = h ? Math.max(0.05, h.distance) : 5;
+      if (hov && !boxed) boxed = hov;
+    }
+    u.ray.material.color.set(g || hov ? 0x7fb8d4 : h && (h.floor || h.door) ? markerColor : 0xffffff);
+    if (!g && !hov && h && h.floor) { u.marker.position.set(h.point.x, h.point.y + 0.012, h.point.z); u.marker.visible = true; }
+    else u.marker.visible = false;
+    const gp = src.gamepad; if (!gp) continue;
+    const ax = gp.axes, sx = (ax.length >= 4 ? ax[2] : ax[0]) || 0, sy = (ax.length >= 4 ? ax[3] : ax[1]) || 0;
+    const edge = i => { const p = !!(gp.buttons[i] && gp.buttons[i].pressed), was = u.prev[i]; u.prev[i] = p; return p && !was; };
+    if (g) {
+      if (Math.abs(sx) > 0.15) rotateFurniture(g.o, -sx * 1.6 * dt); // el stick de la mano que agarra gira el mueble
+    } else if (src.handedness === 'left') {
+      if (Math.hypot(sx, sy) > 0.15) vrMove(sx, sy, dt);
+    } else {
+      if (Math.abs(sx) > 0.7) { if (!u.turned) { snapTurn(-Math.sign(sx) * Math.PI / 6); u.turned = true; } }
+      else if (Math.abs(sx) < 0.3) u.turned = false;
+    }
+    if (edge(4)) showVersion((wanted ?? current) == 1 ? 2 : 1); // A / X
+    if (edge(5)) toggleDoor();                                    // B / Y
+  }
+  if (boxed) { if (selBox.object !== boxed || !selBox.visible) showBox(boxed); else selBox.update(); }
+  else selBox.visible = false;
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+  if (walking) exitWalk();
+  setMoveMode(false);
+  inVR = true; controls.enabled = false; controls.autoRotate = false; spin.setAttribute('aria-pressed', false);
+  glide = look = focusTween = null; ring.visible = false;
+  markerColor.setStyle(css('--marker') || '#d9481c');
+  controllers.forEach(c => c.userData.marker.material.color.copy(markerColor));
+  camera.near = 0.05; camera.far = 200; camera.updateProjectionMatrix();
+  camera.position.set(0, 0, 0); camera.rotation.set(0, 0, 0);
+  dolly.position.set(2.8, 0, -0.9); dolly.rotation.set(0, 0, 0); // entrada por la puerta, mirando al fondo
+  dolly.add(camera);
+  scene.background = vrBg.setStyle(css('--bg') || '#e9ecef');
+  renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true; // escena estática: sombras una sola vez
+  if (renderer.xr.setFoveation) renderer.xr.setFoveation(1);
+  vrBtn.textContent = 'Salir de VR';
+  vrToast(`Versión ${wanted ?? current ?? 1}\nGatillo: ir · Grip: mover muebles · Stick: caminar y girar · A/X: versión`, 6);
+});
+renderer.xr.addEventListener('sessionend', () => {
+  inVR = false; toast.visible = false; toastTimer = 0;
+  controllers.forEach(c => { vrRelease(c); c.userData.marker.visible = false; c.userData.hit = null; });
+  selBox.visible = false;
+  scene.add(camera);
+  scene.background = null;
+  renderer.shadowMap.autoUpdate = true;
+  controls.enabled = true;
+  camera.fov = 45; camera.near = radius / 200; camera.far = radius * 50;
+  vrBtn.textContent = 'Entrar en VR';
+  resize(); view(views.persp);
+});
+
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
-  if (walking) {
+  if (inVR) stepVR(dt);
+  else if (walking) {
     const run = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.2 : 1;
     const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + joyVec.y;
     const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) + joyVec.x;
@@ -631,9 +997,10 @@ renderer.setAnimationLoop(() => {
   }
   else if (joyVec.x || joyVec.y) orbitBy(-joyVec.x * 1.6 * dt, joyVec.y * 1.1 * dt);
   stepTweens(dt); stepDoor(dt);
-  if (!walking) controls.update();
+  if (!inVR && selected && mDrag) selBox.update();
+  if (!walking && !inVR) controls.update();
   renderer.render(scene, camera);
-  renderMap();
+  if (!inVR) renderMap();
 });
 showVersion(startVersion);
 </script>
